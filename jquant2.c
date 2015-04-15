@@ -255,7 +255,7 @@ prescan_quantize (j_decompress_ptr cinfo, JSAMPARRAY input_buf,
  * subset of the input color space (to histogram precision).
  */
 
-typedef struct {
+typedef struct box{
   /* The bounds of the box (inclusive); expressed as histogram indexes */
   int c0min, c0max;
   int c1min, c1max;
@@ -264,9 +264,9 @@ typedef struct {
   INT32 volume;
   /* The number of nonzero histogram cells within this box */
   long colorcount;
-} box;
+} BOX;
 
-typedef box * boxptr;
+typedef BOX * boxptr;
 
 
 LOCAL(boxptr)
@@ -545,7 +545,7 @@ select_colors (j_decompress_ptr cinfo, int desired_colors)
 
   /* Allocate workspace for box list */
   boxlist = (boxptr) (*cinfo->mem->alloc_small)
-    ((j_common_ptr) cinfo, JPOOL_IMAGE, desired_colors * SIZEOF(box));
+    ((j_common_ptr) cinfo, JPOOL_IMAGE, desired_colors * SIZEOF(BOX));
   /* Initialize one box containing whole space */
   numboxes = 1;
   boxlist[0].c0min = 0;
