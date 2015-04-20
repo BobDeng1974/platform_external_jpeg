@@ -25,7 +25,14 @@ void opencl_destroy_context(opencl_context* c);
 
 cl_kernel opencl_compile_create_kernel(opencl_context* context, const char* sourcecode, const char* kernelname);
 
-opencl_mem* opencl_create_mem(opencl_context* con, int size);
+opencl_mem* opencl_create_mem(opencl_context* con, size_t size);
 void opencl_destroy_mem(opencl_mem* mem);
+
+enum {
+    TOCPU = 0,
+    TOGPU = 1
+};
+void opencl_sync_mem(opencl_mem* mem, int gpu);
+void opencl_set_mem(cl_kernel kernel, opencl_mem* mem, int arg);
 
 #endif

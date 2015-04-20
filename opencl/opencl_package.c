@@ -55,7 +55,7 @@ cl_kernel opencl_compile_create_kernel(opencl_context* c, const char* sourcecode
     return kernel;
 }
 
-opencl_mem* opencl_create_mem(opencl_context* con, int size)
+opencl_mem* opencl_create_mem(opencl_context* con, size_t size)
 {
     opencl_mem* res = (opencl_mem*)malloc(sizeof(opencl_mem));
     res->size = size;
@@ -69,13 +69,29 @@ opencl_mem* opencl_create_mem(opencl_context* con, int size)
 void opencl_destroy_mem(opencl_mem* mem)
 {
     assert(NULL!=mem);
-    clEnqueueUnmapMemObject(mem->queue, mem->base, mem->map, 0, NULL, NULL);
+    if (NULL!=mem->map)
+    {
+        clEnqueueUnmapMemObject(mem->queue, mem->base, mem->map, 0, NULL, NULL);
+    }
+    clReleaseMemObject(mem->base);
 }
 
-void opencl_sync_mem(opencl_mem* mem)
+void opencl_sync_mem(opencl_mem* mem, int gpu)
 {
     assert(NULL!=mem);
-    clEnqueueUnmapMemObject(mem->queue, mem->base, mem->map, 0, NULL, NULL);
-    mem->map = clEnqueueMapBuffer(mem->queue, mem->base, CL_FALSE, CL_MAP_READ|CL_MAP_WRITE, 0, mem->size, 0, NULL, NULL, NULL);
-    assert(NULL!=mem->map);
+    if (TOGPU == gpu)
+    {
+        clEnqueueUnmapMemObject(mem->queue, mem->base, mem->map, 0, NULL, NULL);
+        mem->map = NULL;
+    }
+    else
+    {
+        mem->map = clEnqueueMapBuffer(mem->queue, mem->base, CL_TRUE, CL_MAP_READ|CL_MAP_WRITE, 0, mem->size, 0, NULL, NULL, NULL);
+    }
+}
+
+void opencl_set_mem(cl_kernel kernel, opencl_mem* mem, int arg)
+{
+    int error = clSetKernelArg(kernel, arg, sizeof(cl_mem), &(mem->base));
+    assert(CL_SUCCESS == error);
 }
