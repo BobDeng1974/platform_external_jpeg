@@ -79,12 +79,12 @@ void opencl_destroy_mem(opencl_mem* mem)
 void opencl_sync_mem(opencl_mem* mem, int gpu)
 {
     assert(NULL!=mem);
-    if (TOGPU == gpu)
+    if (TOGPU == gpu && mem->map != NULL)
     {
         clEnqueueUnmapMemObject(mem->queue, mem->base, mem->map, 0, NULL, NULL);
         mem->map = NULL;
     }
-    else
+    if (TOCPU == gpu && mem->map == NULL)
     {
         mem->map = clEnqueueMapBuffer(mem->queue, mem->base, CL_TRUE, CL_MAP_READ|CL_MAP_WRITE, 0, mem->size, 0, NULL, NULL, NULL);
     }

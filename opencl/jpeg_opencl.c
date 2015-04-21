@@ -9,7 +9,7 @@ static cl_kernel gKernel[KERNELNUMBER];
 static void initKernel(opencl_context* context)
 {
     gKernel[IDCT_FLOAT] = opencl_compile_create_kernel(context, idct_kernel_clclh, "idct_float");
-    //gKernel[YUV_RGB] = opencl_compile_create_kernel(context,yuv_rgb_clclh, "convert");
+    gKernel[YUV_RGB] = opencl_compile_create_kernel(context,yuv_rgb_clclh, "yuv_rgb");
 }
 
 opencl_context* jpeg_get_context()
@@ -32,6 +32,23 @@ cl_kernel jpeg_get_kernel(KERNELNAME name)
     return gKernel[name];
 }
 
+struct ComponentInfo
+{
+    int max_x_sample;
+    int max_y_sample;
+    int YW;
+    int YH;
+    int UW;
+    int UH;
+    int UOffset;
+    int VW;
+    int VH;
+    int VOffset;
+    int blocksInMCU;
+    int MCU_Per_Row;
+};
+
+
 int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
 {
     int i, blkn;
@@ -43,17 +60,20 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
     JBLOCK* mcu = (JBLOCK*)inputBuffer->map;
     JBLOCK** MCU_buffer = (JBLOCK**)malloc(sizeof(JBLOCK*)*cinfo->blocks_in_MCU);
     opencl_mem* yuvBuffer = opencl_create_mem(context, totalMCUNumber*cinfo->blocks_in_MCU * DCTSIZE2 * sizeof(float));
-    opencl_mem* rgbBuffer = opencl_create_mem(context, 3*sizeof(unsigned char)*DCTSIZE2*cinfo->MCU_rows_in_scan * cinfo->MCUs_per_row);
     opencl_mem* tablebuffer = opencl_create_mem(context, cinfo->comps_in_scan*DCTSIZE2*sizeof(float));
     opencl_mem* offsetbuffer = opencl_create_mem(context, cinfo->blocks_in_MCU*sizeof(int));
     int currentoffset = 0;
-    assert(cinfo->dct_method == JDCT_FLOAT);
     assert(NULL!=yuvBuffer);
-    assert(NULL!=rgbBuffer);
     assert(NULL!=MCU_buffer);
     assert(NULL!=tablebuffer);
     assert(NULL!=inputBuffer);
     assert(NULL!=offsetbuffer);
+    assert(cinfo->dct_method == JDCT_FLOAT);
+    assert(cinfo->comps_in_scan == 3);
+    for (i=0;i<3; ++i)
+    {
+        assert(cinfo->cur_comp_info[i]->DCT_scaled_size == 8);
+    }
     sta = clock();
     opencl_sync_mem(inputBuffer, TOCPU);
     jzero_far(inputBuffer->map, totalMCUNumber*cinfo->blocks_in_MCU * sizeof(JBLOCK));
@@ -107,45 +127,55 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
     }
     opencl_destroy_mem(inputBuffer);
     opencl_destroy_mem(tablebuffer);
+    opencl_destroy_mem(offsetbuffer);
     /*TODO Sample YUV to RGB*/
     {
-        opencl_sync_mem(yuvBuffer, TOCPU);
+        opencl_mem* rgbBuffer = opencl_create_mem(context, 3*sizeof(unsigned char)*DCTSIZE2*cinfo->MCU_rows_in_scan * cinfo->MCUs_per_row * cinfo->max_h_samp_factor * cinfo->max_v_samp_factor);
+        int stride = cinfo->MCUs_per_row * cinfo->max_h_samp_factor * DCTSIZE;
+        struct ComponentInfo info;
+        size_t global[2] = {cinfo->MCUs_per_row*cinfo->max_h_samp_factor, cinfo->MCU_rows_in_scan*cinfo->max_v_samp_factor*DCTSIZE};
+        cl_kernel kernel = jpeg_get_kernel(YUV_RGB);
+        opencl_sync_mem(rgbBuffer, TOGPU);
+        assert(NULL!=rgbBuffer);
         fin = clock();
         printf("Opencl time is %lu / %d, in %s, %d\n", fin-sta, CLOCKS_PER_SEC, __func__, __LINE__);
-        memset(output_buf, 128, cinfo->output_width*cinfo->output_height*3);
-        for (int i=0; i<cinfo->output_height; ++i)
+        info.YW = cinfo->cur_comp_info[0]->h_samp_factor;
+        info.YH = cinfo->cur_comp_info[0]->v_samp_factor;
+        info.UW = cinfo->cur_comp_info[1]->h_samp_factor;
+        info.UH = cinfo->cur_comp_info[1]->v_samp_factor;
+        info.VW = cinfo->cur_comp_info[2]->h_samp_factor;
+        info.VH = cinfo->cur_comp_info[2]->v_samp_factor;
+        info.UOffset = info.YW*info.YH;
+        info.VOffset = info.UOffset + info.UW*info.UH;
+        info.blocksInMCU = cinfo->blocks_in_MCU;
+        info.MCU_Per_Row = cinfo->MCUs_per_row;
+        info.max_x_sample = cinfo->max_h_samp_factor;
+        info.max_y_sample = cinfo->max_v_samp_factor;
         {
-            for (int j=0; j<cinfo->output_width; ++j)
-            {
-                int mcu_y = i / 8;
-                int mcu_x = j / 8;
-                int by = i%8;
-                int bx = j%8;
-                float* blockbasic = (float*)(yuvBuffer->map) + DCTSIZE2*3*(mcu_x + cinfo->MCUs_per_row*mcu_y);
-                float y = *(blockbasic + by * 8 + bx) + 128;
-                float u = *(blockbasic + by * 8 + bx + DCTSIZE2);
-                float v = *(blockbasic + by * 8 + bx + DCTSIZE2*2);
-#define limit(r) r = r>255?255:r; r=r<0?0:r;
-                float r = y + 1.40200f*v;
-                limit(r);
-                float g = y - 0.34414*u - 0.71414*v;
-                limit(g);
-                float b = y + 1.77200f*u;
-                limit(b);
-                JSAMPLE* basic = (output_buf + (cinfo->output_width * i + j)*3);
-#undef limit
-                basic[0] = r;
-                basic[1] = g;
-                basic[2] = b;
-            }
+            int error = clSetKernelArg(kernel, 2, sizeof(struct ComponentInfo), &info);
+            opencl_sync_mem(yuvBuffer, TOCPU);
+            opencl_sync_mem(yuvBuffer, TOGPU);
+            opencl_set_mem(kernel, yuvBuffer, 0);
+            opencl_set_mem(kernel, rgbBuffer, 1);
+            assert(CL_SUCCESS == error);
+            error = clSetKernelArg(kernel, 3, sizeof(int), &stride);
+            assert(CL_SUCCESS == error);
+            opencl_sync_mem(yuvBuffer, TOCPU);
+            error =clEnqueueNDRangeKernel(context->queue, kernel, 2, NULL, global, NULL, 0, NULL, NULL);
+            assert(CL_SUCCESS == error);
         }
+        /*Copy rgbbuffer to output_buf*/
+        opencl_sync_mem(rgbBuffer, TOCPU);
+        for (i=0; i<cinfo->output_height; ++i)
+        {
+            unsigned char* src = (unsigned char*)(rgbBuffer->map) + 3*stride*i;
+            unsigned char* dst = output_buf + 3*cinfo->output_width*i;
+            memcpy(dst, src, 3*cinfo->output_width);
+        }
+        opencl_destroy_mem(rgbBuffer);
     }
     ////
     opencl_destroy_mem(yuvBuffer);
-    opencl_destroy_mem(offsetbuffer);
-    /*Copy rgbbuffer to output_buf*/
-    
-    opencl_destroy_mem(rgbBuffer);
     
     fin = clock();
     printf("Opencl time is %lu / %d, in %s, %d\n", fin-sta, CLOCKS_PER_SEC, __func__, __LINE__);
