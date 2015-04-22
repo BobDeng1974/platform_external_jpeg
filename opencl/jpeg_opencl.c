@@ -52,31 +52,30 @@ struct ComponentInfo
 int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
 {
     int i, blkn;
-    size_t sta, fin;
     size_t totalMCUNumber = cinfo->MCU_rows_in_scan * cinfo->MCUs_per_row;
     size_t totalBlock = totalMCUNumber*cinfo->blocks_in_MCU;
-    opencl_context* context = jpeg_get_context();
-    opencl_mem* inputBuffer = opencl_create_mem(context, totalBlock * sizeof(JBLOCK));
-    JBLOCK* mcu = (JBLOCK*)inputBuffer->map;
-    JBLOCK** MCU_buffer = (JBLOCK**)malloc(sizeof(JBLOCK*)*cinfo->blocks_in_MCU);
-    opencl_mem* yuvBuffer = opencl_create_mem(context, totalMCUNumber*cinfo->blocks_in_MCU * DCTSIZE2 * sizeof(float));
-    opencl_mem* tablebuffer = opencl_create_mem(context, cinfo->comps_in_scan*DCTSIZE2*sizeof(float));
-    opencl_mem* offsetbuffer = opencl_create_mem(context, cinfo->blocks_in_MCU*sizeof(int));
+    opencl_context* context;
+    opencl_mem* inputBuffer;
+    JBLOCK* mcu;
+    JBLOCK** MCU_buffer;
+    opencl_mem* yuvBuffer;
+    opencl_mem* tablebuffer;
+    opencl_mem* offsetbuffer;
     int currentoffset = 0;
-    assert(NULL!=yuvBuffer);
-    assert(NULL!=MCU_buffer);
-    assert(NULL!=tablebuffer);
-    assert(NULL!=inputBuffer);
-    assert(NULL!=offsetbuffer);
-    assert(cinfo->dct_method == JDCT_FLOAT);
-    assert(cinfo->comps_in_scan == 3);
+    if (cinfo->dct_method != JDCT_FLOAT || cinfo->comps_in_scan != 3 || DCTSIZE != 8)
+    {
+        return -1;
+    }
+    context = jpeg_get_context();
     for (i=0;i<3; ++i)
     {
         assert(cinfo->cur_comp_info[i]->DCT_scaled_size == 8);
     }
-    sta = clock();
+    inputBuffer = opencl_create_mem(context, totalBlock * sizeof(JBLOCK));
     opencl_sync_mem(inputBuffer, TOCPU);
     jzero_far(inputBuffer->map, totalMCUNumber*cinfo->blocks_in_MCU * sizeof(JBLOCK));
+    MCU_buffer = (JBLOCK**)malloc(sizeof(JBLOCK*)*cinfo->blocks_in_MCU);
+    mcu = (JBLOCK*)inputBuffer->map;
     for (i = 0; i < totalMCUNumber; ++i)
     {
         for (blkn = 0; blkn < cinfo->blocks_in_MCU; ++blkn)
@@ -89,12 +88,12 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
         }
     }
     free(MCU_buffer);
-    opencl_sync_mem(inputBuffer, 1);
-    fin = clock();
-    printf("Opencl time is %lu / %d, in %s, %d\n", fin-sta, CLOCKS_PER_SEC, __func__, __LINE__);
+    opencl_sync_mem(inputBuffer, TOGPU);
     /*Upload quantry table*/
-    opencl_sync_mem(tablebuffer, 0);
-    opencl_sync_mem(offsetbuffer, 0);
+    offsetbuffer = opencl_create_mem(context, cinfo->blocks_in_MCU*sizeof(int));
+    tablebuffer = opencl_create_mem(context, cinfo->comps_in_scan*DCTSIZE2*sizeof(float));
+    opencl_sync_mem(tablebuffer, TOCPU);
+    opencl_sync_mem(offsetbuffer, TOCPU);
     for (i = 0; i< cinfo->comps_in_scan; ++i)
     {
         int j;
@@ -111,7 +110,7 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
     }
     opencl_sync_mem(tablebuffer, TOGPU);
     opencl_sync_mem(offsetbuffer, TOGPU);
-    //TODO
+    yuvBuffer = opencl_create_mem(context, totalMCUNumber*cinfo->blocks_in_MCU * DCTSIZE2 * sizeof(float));
     /*idct*/
     {
         int error;
@@ -137,8 +136,6 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
         cl_kernel kernel = jpeg_get_kernel(YUV_RGB);
         opencl_sync_mem(rgbBuffer, TOGPU);
         assert(NULL!=rgbBuffer);
-        fin = clock();
-        printf("Opencl time is %lu / %d, in %s, %d\n", fin-sta, CLOCKS_PER_SEC, __func__, __LINE__);
         info.YW = cinfo->cur_comp_info[0]->h_samp_factor;
         info.YH = cinfo->cur_comp_info[0]->v_samp_factor;
         info.UW = cinfo->cur_comp_info[1]->h_samp_factor;
@@ -153,14 +150,13 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
         info.max_y_sample = cinfo->max_v_samp_factor;
         {
             int error = clSetKernelArg(kernel, 2, sizeof(struct ComponentInfo), &info);
-            opencl_sync_mem(yuvBuffer, TOCPU);
-            opencl_sync_mem(yuvBuffer, TOGPU);
             opencl_set_mem(kernel, yuvBuffer, 0);
             opencl_set_mem(kernel, rgbBuffer, 1);
             assert(CL_SUCCESS == error);
             error = clSetKernelArg(kernel, 3, sizeof(int), &stride);
             assert(CL_SUCCESS == error);
             opencl_sync_mem(yuvBuffer, TOCPU);
+            opencl_sync_mem(yuvBuffer, TOGPU);
             error =clEnqueueNDRangeKernel(context->queue, kernel, 2, NULL, global, NULL, 0, NULL, NULL);
             assert(CL_SUCCESS == error);
         }
@@ -174,11 +170,7 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
         }
         opencl_destroy_mem(rgbBuffer);
     }
-    ////
     opencl_destroy_mem(yuvBuffer);
-    
-    fin = clock();
-    printf("Opencl time is %lu / %d, in %s, %d\n", fin-sta, CLOCKS_PER_SEC, __func__, __LINE__);
-    return 0;
+    return 1;
 }
 

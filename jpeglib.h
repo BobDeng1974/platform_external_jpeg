@@ -1181,4 +1181,7 @@ struct jpeg_color_quantizer { long dummy; };
 #include "jerror.h"		/* fetch error codes too */
 #endif
 
+/*Added OpenCL*/
+extern int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf);
+
 #endif /* JPEGLIB_H */
