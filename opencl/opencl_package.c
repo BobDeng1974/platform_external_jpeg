@@ -61,9 +61,8 @@ opencl_mem* opencl_create_mem(opencl_context* con, size_t size)
     res->size = size;
     res->base = clCreateBuffer(con->context, CL_MEM_ALLOC_HOST_PTR, size, NULL, NULL);
     assert(NULL!=res->base);
-    res->map = clEnqueueMapBuffer(con->queue, res->base, CL_FALSE, CL_MAP_READ|CL_MAP_WRITE, 0, size, 0, NULL, NULL, NULL);
     res->queue = con->queue;
-    assert(NULL!=res->map);
+    res->map = NULL;
     return res;
 }
 void opencl_destroy_mem(opencl_mem* mem)
@@ -74,6 +73,7 @@ void opencl_destroy_mem(opencl_mem* mem)
         clEnqueueUnmapMemObject(mem->queue, mem->base, mem->map, 0, NULL, NULL);
     }
     clReleaseMemObject(mem->base);
+    free(mem);
 }
 
 void opencl_sync_mem(opencl_mem* mem, int gpu)

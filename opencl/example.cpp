@@ -10,6 +10,7 @@
 extern "C"
 {
 #include "jpeglib.h"
+#include "jpeg_opencl.h"
 };
 void write_JPEG_file (const char * filename, JSAMPLE* image_buffer, int image_width, int image_height)
 {
@@ -64,6 +65,7 @@ int test_main() {
     auto width = cinfo.output_width;
     auto height = cinfo.output_height;
     auto pixels = (JSAMPLE*)(malloc(width*height*3));
+    TIME_START;
     if (1)
     {
         jpeg_decode_by_opencl(&cinfo, pixels);
@@ -90,8 +92,7 @@ int test_main() {
     }
     
     fclose(infile);
-    auto fin = clock();
-    printf("Time cost for %d * %d, %lu / %ds\n", width, height, fin-sta, CLOCKS_PER_SEC);
+    TIME_END;
     
     write_JPEG_file(outputfile, pixels, width, height);
     free(pixels);
