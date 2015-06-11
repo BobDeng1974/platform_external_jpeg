@@ -17,7 +17,7 @@ struct ComponentInfo
     int MCU_Per_Row;
 };
 
-__kernel void yuv_rgb(__global float* yuvbuffer, __global unsigned char* rgba, struct ComponentInfo info, int output_stride)
+__kernel void yuv_rgb(__global unsigned char* yuvbuffer, __global unsigned char* rgba, struct ComponentInfo info, int output_stride)
 {
     int x = get_global_id(0);
     int y_origin = get_global_id(1);
@@ -26,13 +26,13 @@ __kernel void yuv_rgb(__global float* yuvbuffer, __global unsigned char* rgba, s
     int mcux = x/info.max_x_sample;
     int mcuy = y/info.max_y_sample;
     __global unsigned char* output = rgba + 3*(output_stride*y_origin + x*DCTSIZE);
-    __global float* basic = yuvbuffer + DCTSIZE2*info.blocksInMCU*(info.MCU_Per_Row*mcuy + mcux);
-    __global float* Y = basic + DCTSIZE2*((x%info.YW) + 2*(y%info.YH)) + DCTSIZE*yoffset;
-    __global float* U = basic + DCTSIZE2*((x%info.UW) + 2*(y%info.UH)+info.UOffset) + DCTSIZE*yoffset;
-    __global float* V = basic + DCTSIZE2*((x%info.VW) + 2*(y%info.VH)+info.VOffset) + DCTSIZE*yoffset;
-    float8 yy = vload8(0, Y) + float8(128);
-    float8 uu = vload8(0, U);
-    float8 vv = vload8(0, V);
+    __global unsigned char* basic = yuvbuffer + DCTSIZE2*info.blocksInMCU*(info.MCU_Per_Row*mcuy + mcux);
+    __global unsigned char* Y = basic + DCTSIZE2*((x%info.YW) + 2*(y%info.YH)) + DCTSIZE*yoffset;
+    __global unsigned char* U = basic + DCTSIZE2*((x%info.UW) + 2*(y%info.UH)+info.UOffset) + DCTSIZE*yoffset;
+    __global unsigned char* V = basic + DCTSIZE2*((x%info.VW) + 2*(y%info.VH)+info.VOffset) + DCTSIZE*yoffset;
+    float8 yy = convert_float8(vload8(0, Y));
+    float8 uu = convert_float8(vload8(0, U)) - float8(128);
+    float8 vv = convert_float8(vload8(0, V)) - float8(128);
     uchar8 r, g, b;
     uchar8 first, second, third;
 #define RESULT(x) convert_uchar8(clamp(x, float8(0), float8(255)))

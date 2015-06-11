@@ -122,7 +122,7 @@ int jpeg_decode_by_opencl(j_decompress_ptr cinfo, JSAMPLE* output_buf)
     TIME_END;
     opencl_sync_mem(tablebuffer, TOGPU);
     opencl_sync_mem(offsetbuffer, TOGPU);
-    yuvBuffer = opencl_create_mem(context, totalMCUNumber*cinfo->blocks_in_MCU * DCTSIZE2 * sizeof(float));
+    yuvBuffer = opencl_create_mem(context, totalMCUNumber*cinfo->blocks_in_MCU * DCTSIZE2 * sizeof(unsigned char));
     TIME_END;
     /*idct*/
     {
