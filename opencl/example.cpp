@@ -44,13 +44,12 @@ void write_JPEG_file (const char * filename, JSAMPLE* image_buffer, int image_wi
 }
 
 int test_main() {
-    const char* inputfile = "/Users/jiangxiaotang/third/platform_external_jpeg/opencl/input.jpg";
-    const char* outputfile = "/Users/jiangxiaotang/third/platform_external_jpeg/opencl/output.jpeg";
+    const char* inputfile = "/Users/jiangxiaotang/Documents/platform_external_jpeg/qianlong.jpg";
+    const char* outputfile = "/Users/jiangxiaotang/Documents/platform_external_jpeg/qianlong_output.jpeg";
     struct jpeg_decompress_struct cinfo;
     FILE* infile;
     JSAMPARRAY buffer;
     int row_stride;
-    auto sta = clock();
     if ((infile = fopen(inputfile, "rb")) == NULL)
     {
         return NULL;
@@ -101,7 +100,7 @@ int test_main() {
 
 int main()
 {
-    for (int i=0; i<2;++i)
+    for (int i=0; i<10;++i)
     {
         test_main();
     }

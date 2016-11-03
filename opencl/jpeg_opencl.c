@@ -2,6 +2,7 @@
 #include <pthread.h>
 #include <assert.h>
 #include <string.h>
+#include <stdlib.h>
 
 
 static opencl_context* gInstance = NULL;
